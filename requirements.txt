@@ -8,3 +8,4 @@ streamlit==1.30.0
 google_cloud_aiplatform==1.39.0
 google-cloud
 google-cloud-documentai
+ffmpeg-python
