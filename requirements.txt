@@ -1,7 +1,7 @@
 openai==1.10.0
 protobuf==4.25.2
 pydub==0.20.0
-PyPDF2==3.0.1
+PyPDF2==2.4.2
 python-dotenv==1.0.1
 python_docx==1.1.0
 streamlit==1.30.0
