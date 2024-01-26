@@ -10,8 +10,10 @@ import re
 import math
 import tempfile
 from pydub import AudioSegment
-
-client = OpenAI(api_key = "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")
+import os
+from dotenv import load_dotenv
+load_dotenv()
+client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
 
 
 def read_docx(file_path):
