@@ -78,13 +78,14 @@ if file is not None:
             with st.spinner(f'Translating to {target_language}...'):
                 if prompt_option == "Use default prompt":
                     # Use default prompt
-                    prompt = f"""You are a professional translator. You have to translate the following text to {target_language}. Remember to:
+                    prompt = f"""You are a professional translator. You have to translate the provided text into {target_language}. Remember to:
                     1) Keep the length of the translated text the same as original text.
-                    2) Don't skip or leave any part of the text. All details are very important
+                    2) Don't skip or leave any part of the text. All details are very important.
                     3) Identify the Name, Entities and don't translate them, just write them in {target_language}
-                    4) Keep the format of the translated text the same as the orignal text
-                    5) You need to format the output as if it was a page of a book. Analyse the content and determine the format, It could be a table of content, title page, or page of a chapter
-                    6) Only return the translation of the text provided, Don't return anything else."""
+                    4) Keep the format of the translated text the same as the orignal text.
+                    5) You need to format the output as if it was a page of a book. Analyse the content and determine the format, It could be a table of content, title page, or page of a chapter. It should be formatted as that page.
+                    6) Only return the translation of the text provided, Don't return anything else.
+                    7) Don't return any text in the original language. Only return text in {target_language}"""
                 else:
                     # Use custom prompt (entered or selected from saved prompts)
                     prompt = custom_prompt
