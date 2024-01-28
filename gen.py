@@ -19,15 +19,16 @@ client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
 def read_docx(file_path):
     doc = Document(file_path)
     full_text = ""
-    paragraph_count = 0
+    char_count = 0
 
     for para in doc.paragraphs:
-        full_text += para.text + "\n"
-        paragraph_count += 1
+        para_text = para.text + "\n"
+        full_text += para_text
+        char_count += len(para_text)
 
-        if paragraph_count % 5 == 0:
+        if char_count >= 3000:
             full_text += "\n--EndOfPage--\n\n"
-
+            char_count = 0  
     return full_text.strip()
 
 def audio_transcript(audio_file):
@@ -42,12 +43,8 @@ def audio_transcript(audio_file):
             start = i * 60 * 1000  
             end = min((i + 1) * 60 * 1000, len(audio))
             chunk = audio[start:end]
-
-            # Create a temporary file for the chunk
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_file:
                 chunk.export(temp_file.name, format="wav")
-                
-                # Transcribe the chunk
                 transcription = client.audio.transcriptions.create(model="whisper-1", file=open(temp_file.name, 'rb'), response_format="text")
                 full_transcription += transcription.strip() + " "
                 full_transcription+= "\n--EndOfPage--\n\n"
@@ -105,7 +102,7 @@ def read_document(chunk):
 
 def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
   completion = client.chat.completions.create(
-  model="gpt-3.5-turbo-1106",
+  model="gpt-4-0125-preview",
   messages=[{"role": "system", "content": prompt},
             {"role": "user", "content": text}]
 )
@@ -116,7 +113,6 @@ def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
     
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
-    print("SADDDDDDadasd: ",len(pages))
     translated_pages = [translate(page, prompt, source_lang, target_lang) for page in pages]
     combined_translated_text = "\n\n".join(translated_pages)
 

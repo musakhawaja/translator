@@ -70,8 +70,8 @@ if file is not None:
             st.session_state.file_processed = True
                 
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
-    source_language = st.text_input("Enter the source language (e.g., 'English'):")
-    target_language = st.text_input("Enter the target language (e.g., 'Spanish'):") 
+    source_language = st.text_input("Enter the source language:")
+    target_language = st.text_input("Enter the target language:") 
 
     if st.button('Translate'):
         if edited_text:
@@ -85,7 +85,9 @@ if file is not None:
                     4) Keep the format of the translated text the same as the orignal text.
                     5) You need to format the output as if it was a page of a book. Analyse the content and determine the format, It could be a table of content, title page, or page of a chapter. It should be formatted as that page.
                     6) Only return the translation of the text provided, Don't return anything else.
-                    7) Don't return any text in the original language. Only return text in {target_language}"""
+                    7) Don't return any text in the original language. Only return text in {target_language}
+                    8) Identify the headings in the text and bold them
+                    9) If you aren't given any text, just return a blank response. Don't return anything other than translated text or blank response"""
                 else:
                     # Use custom prompt (entered or selected from saved prompts)
                     prompt = custom_prompt
