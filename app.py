@@ -23,6 +23,18 @@ file_types = {
     'DOC': ['docx'],
     'PDF': ['pdf']
 }
+
+if 'file_processed' not in st.session_state:
+    st.session_state.file_processed = False
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = ""
+if 'translated_text' not in st.session_state:
+    st.session_state.translated_text = ""
+if 'source_language' not in st.session_state:
+    st.session_state.source_language = ""
+if 'target_language' not in st.session_state:
+    st.session_state.target_language = ""
+
 if 'file_processed' not in st.session_state:
     st.session_state.file_processed = False
 if 'transcript' not in st.session_state:
@@ -37,8 +49,10 @@ edited_text = ""
 if file and (not hasattr(st.session_state, 'last_uploaded_file') or file != st.session_state.last_uploaded_file):
     st.session_state.file_processed = False
     st.session_state.transcript = ""
+    st.session_state.translated_text = ""
+    st.session_state.source_language = ""
+    st.session_state.target_language = ""
     st.session_state.last_uploaded_file = file
-
 
 if file and not st.session_state.file_processed:
     if st.button('Transcribe'):
