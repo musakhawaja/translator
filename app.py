@@ -18,19 +18,6 @@ def load_custom_prompts():
 
 saved_custom_prompts = load_custom_prompts()
 
-prompt_option = st.radio("Choose your prompt type", ["Use default prompt", "Enter custom prompt", "Use saved prompt"])
-custom_prompt = ""
-
-if prompt_option == "Enter custom prompt":
-    custom_prompt = st.text_area("Enter your custom prompt:")
-    if st.button("Save Custom Prompt"):
-        save_custom_prompt(custom_prompt)
-        saved_custom_prompts.append(custom_prompt)
-        st.success("Custom prompt saved.")
-elif prompt_option == "Use saved prompt":
-    custom_prompt = st.selectbox("Select a saved prompt", saved_custom_prompts)
-
-
 file_types = {
     'MP3': ['mp3'],
     'DOC': ['docx'],
@@ -43,13 +30,14 @@ file = st.file_uploader("Upload a file", type=file_types[option])
 
 edited_text = ""
 
-if file is not None:
-    # Initialize state variables for each file type
-    if 'file_processed' not in st.session_state:
-        st.session_state.file_processed = False
-    if 'transcript' not in st.session_state:
-        st.session_state.transcript = ""
-    if not st.session_state.file_processed:
+if 'file_processed' not in st.session_state:
+    st.session_state.file_processed = False
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = ""
+
+
+if file and not st.session_state.file_processed:
+    if st.button('Transcribe'):
         if option == 'MP3':
             with st.spinner('Transcribing audio...'):
                 st.session_state.transcript = audio_transcript(file)
@@ -68,10 +56,22 @@ if file is not None:
                     extracted_text += read_document(chunk)
             st.session_state.transcript = extracted_text
             st.session_state.file_processed = True
-                
+
+if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
     source_language = st.text_input("Enter the source language:")
     target_language = st.text_input("Enter the target language:") 
+    prompt_option = st.radio("Choose your prompt type", ["Use default prompt", "Enter custom prompt", "Use saved prompt"])
+    custom_prompt = ""
+
+    if prompt_option == "Enter custom prompt":
+        custom_prompt = st.text_area("Enter your custom prompt:")
+        if st.button("Save Custom Prompt"):
+            save_custom_prompt(custom_prompt)
+            saved_custom_prompts.append(custom_prompt)
+            st.success("Custom prompt saved.")
+    elif prompt_option == "Use saved prompt":
+        custom_prompt = st.selectbox("Select a saved prompt", saved_custom_prompts)
 
     if st.button('Translate'):
         if edited_text:

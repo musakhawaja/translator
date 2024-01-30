@@ -102,7 +102,7 @@ def read_document(chunk):
 
 def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
   completion = client.chat.completions.create(
-  model="gpt-4-0125-preview",
+  model="gpt-4",
   messages=[{"role": "system", "content": prompt},
             {"role": "user", "content": text}]
 )
