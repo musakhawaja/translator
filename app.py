@@ -23,6 +23,10 @@ file_types = {
     'DOC': ['docx'],
     'PDF': ['pdf']
 }
+if 'file_processed' not in st.session_state:
+    st.session_state.file_processed = False
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = ""
 
 option = st.selectbox('Choose the type of file to upload', list(file_types.keys()))
 
@@ -30,10 +34,10 @@ file = st.file_uploader("Upload a file", type=file_types[option])
 
 edited_text = ""
 
-if 'file_processed' not in st.session_state:
+if file and (not hasattr(st.session_state, 'last_uploaded_file') or file != st.session_state.last_uploaded_file):
     st.session_state.file_processed = False
-if 'transcript' not in st.session_state:
     st.session_state.transcript = ""
+    st.session_state.last_uploaded_file = file
 
 
 if file and not st.session_state.file_processed:
@@ -95,13 +99,13 @@ if st.session_state.file_processed:
         else:
             st.error("No text available to translate.")
 
-if 'translated_text' in st.session_state:
-    st.session_state.translated_text = st.text_area("Edit the translation:", st.session_state.translated_text, height=600)
-    if st.button("Generate Download Link"):
-        docx_bytes = convert_text_to_docx_bytes(st.session_state.translated_text)
-        st.download_button(
-            label="Download Edited Translation",
-            data=docx_bytes,
-            file_name="edited_translation.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+    if 'translated_text' in st.session_state:
+        st.session_state.translated_text = st.text_area("Edit the translation:", st.session_state.translated_text, height=600)
+        if st.button("Generate Download Link"):
+            docx_bytes = convert_text_to_docx_bytes(st.session_state.translated_text)
+            st.download_button(
+                label="Download Edited Translation",
+                data=docx_bytes,
+                file_name="edited_translation.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
