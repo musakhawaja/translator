@@ -299,12 +299,17 @@ if file and not st.session_state.file_processed:
             print("Temp file paths:", temp_file_paths)  # This now returns a list of temp file paths
             extracted_texts = []
 
+            
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
-                print(f"Processing file {i}: {temp_file_path}")
-                with st.spinner(f'Transcribing page {i} of {len(temp_file_paths)}...'):
-                    extracted_text = read_document(temp_file_path)  # read_document now processes a file path
-                    extracted_texts.append(extracted_text)
-                    # Cleanup: delete the temporary file after processing
+                try:
+                    with st.spinner(f'Transcribing page {i} of {len(temp_file_paths)}...'):
+                        extracted_text = read_document(temp_file_path)  # read_document now processes a file path
+                        extracted_texts.append(extracted_text)
+                        # Cleanup: delete the temporary file after processing
+                except Exception as e:
+                    st.error(f"An error occurred while processing file {i}: {temp_file_path}. Error: {e}")
+                    print(f"An error occurred while processing file {i}: {temp_file_path}. Error: {e}")
+                    continue  # Skip the current file and continue with the next
 
             st.session_state.transcript = "\n\n".join(extracted_texts)
             st.session_state.file_processed = True
