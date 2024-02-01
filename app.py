@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=1):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=3):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
@@ -133,13 +133,12 @@ def read_document(temp_file_path):
 
     return all_structured_text
 
-@st.cache_data
 def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
     completion = client.chat.completions.create(
-        model="gpt-3.5-turbo-0125",
+        model="gpt-4-0125-preview",
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text}
