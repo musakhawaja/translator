@@ -90,7 +90,7 @@ def split_pdf_to_chunks(uploaded_file, pages_per_chunk=1):
         chunk_file.seek(0)  
         yield chunk_file
 
-@st.cache
+@st.cache_data
 def read_document(chunk):
     credentials = service_account.Credentials.from_service_account_file("ocrproject-412113-82a31889338f.json")
     client = documentai.DocumentProcessorServiceClient(credentials=credentials)
@@ -122,7 +122,7 @@ def read_document(chunk):
 
     return structured_text
 
-@st.cache
+@st.cache_data
 def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
   completion = client.chat.completions.create(
   model="gpt-4",
@@ -228,11 +228,12 @@ if 'translation_time' not in st.session_state:
     st.session_state.translation_time = ""
 if 'transcription_time' not in st.session_state:
     st.session_state.transcription_time = ""
-
 if 'file_processed' not in st.session_state:
     st.session_state.file_processed = False
 if 'transcript' not in st.session_state:
     st.session_state.transcript = ""
+
+
 
 option = st.selectbox('Choose the type of file to upload', list(file_types.keys()))
 
