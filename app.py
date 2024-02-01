@@ -79,65 +79,99 @@ def split_pdf_to_chunks(uploaded_file, pages_per_chunk=1):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
+    temp_files = []  #
 
     for start_page in range(0, total_pages, pages_per_chunk):
         writer = PdfFileWriter()
         end_page = min(start_page + pages_per_chunk, total_pages)
+
         for page_number in range(start_page, end_page):
             writer.addPage(reader.getPage(page_number))
-        chunk_file = io.BytesIO()
-        writer.write(chunk_file)
-        chunk_file.seek(0)  
-        yield chunk_file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        writer.write(temp_file)
+        temp_file.close()  
+        temp_files.append(temp_file.name) 
 
-@st.cache_data
-def read_document(chunk):
+    return temp_files
+
+def read_document(temp_file_path):
     credentials = service_account.Credentials.from_service_account_file("ocrproject-412113-82a31889338f.json")
     client = documentai.DocumentProcessorServiceClient(credentials=credentials)
     name = "projects/707177808576/locations/us/processors/6eebcb4a15b88393"
+    
+    all_structured_text = ""  # Initialize a variable to store all structured text from all documents
 
-    content = chunk.read()
-    raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
-    request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-    result = client.process_document(request=request)
-    document = result.document
+    with open(temp_file_path, "rb") as chunk:
+        content = chunk.read()
+        raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
+        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+        result = client.process_document(request=request)
+        document = result.document
 
-    structured_text = ""
-    for page in document.pages:
-        rows = {}
-        for block in page.blocks:
-            y_coord = block.layout.bounding_poly.vertices[0].y
-            if y_coord not in rows:
-                rows[y_coord] = []
-            block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
-                                       block.layout.text_anchor.text_segments[0].end_index]
-            rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
+        structured_text = ""
+        for page in document.pages:
+            rows = {}
+            for block in page.blocks:
+                y_coord = block.layout.bounding_poly.vertices[0].y
+                if y_coord not in rows:
+                    rows[y_coord] = []
+                block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
+                                            block.layout.text_anchor.text_segments[0].end_index]
+                rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
 
-        for y_coord in sorted(rows.keys()):
-            row = sorted(rows[y_coord], key=lambda x: x[0])  
-            row_text = '\t'.join([text for _, text in row])  
-            structured_text += row_text + "\n"
+            for y_coord in sorted(rows.keys()):
+                row = sorted(rows[y_coord], key=lambda x: x[0])
+                row_text = '\t'.join([text for _, text in row])
+                structured_text += row_text + "\n"
 
-        structured_text += "--EndOfPage--\n\n"
+            structured_text += "--EndOfPage--\n\n"
+        
+        all_structured_text += structured_text  # Append the structured text from the current document
 
-    return structured_text
+    # Delete the temporary file after processing
+    os.remove(temp_file_path)
+
+    return all_structured_text
 
 @st.cache_data
-def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
-  completion = client.chat.completions.create(
-  model="gpt-4",
-  messages=[{"role": "system", "content": prompt},
-            {"role": "user", "content": text}]
-)
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
 
-  result = completion.choices[0].message.content
-  print(result)
-  return result
+    completion = client.chat.completions.create(
+        model="gpt-3.5-turbo-0125",
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": text}
+        ]
+    )
+
+    result = completion.choices[0].message.content
+    print(result)
+    return result
     
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
-    translated_pages = [translate(page, prompt, source_lang, target_lang) for page in pages]
-    combined_translated_text = "\n\n".join(translated_pages)
+    temp_file_paths = []
+    translated_texts = []
+
+    # Save each page to a temp file
+    for page in pages:
+        with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
+            temp_file.write(page)
+            temp_file_paths.append(temp_file.name)
+
+    # Translate each temp file
+    for file_path in temp_file_paths:
+        translated_text = translate(file_path, prompt, source_lang, target_lang)
+        translated_texts.append(translated_text)
+
+    # Combine translated texts
+    combined_translated_text = "\n\n".join(translated_texts)
+
+    # Cleanup: delete temp files
+    for file_path in temp_file_paths:
+        os.remove(file_path)
 
     return combined_translated_text
 
@@ -261,12 +295,18 @@ if file and not st.session_state.file_processed:
                 st.session_state.file_processed = True
 
         elif option == 'PDF':
-            pdf_chunks = list(split_pdf_to_chunks(file))
-            extracted_text = ''
-            for i, chunk in enumerate(pdf_chunks, start=1):
-                with st.spinner(f'Transcribing page {i} of {len(pdf_chunks)}...'):
-                    extracted_text += read_document(chunk)
-            st.session_state.transcript = extracted_text
+            temp_file_paths = split_pdf_to_chunks(file)
+            print("Temp file paths:", temp_file_paths)  # This now returns a list of temp file paths
+            extracted_texts = []
+
+            for i, temp_file_path in enumerate(temp_file_paths, start=1):
+                print(f"Processing file {i}: {temp_file_path}")
+                with st.spinner(f'Transcribing page {i} of {len(temp_file_paths)}...'):
+                    extracted_text = read_document(temp_file_path)  # read_document now processes a file path
+                    extracted_texts.append(extracted_text)
+                    # Cleanup: delete the temporary file after processing
+
+            st.session_state.transcript = "\n\n".join(extracted_texts)
             st.session_state.file_processed = True
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
