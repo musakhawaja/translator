@@ -248,6 +248,20 @@ file_types = {
     'PDF': ['pdf']
 }
 
+if 'file_processed' not in st.session_state:
+    st.session_state.file_processed = False
+if 'transcript' not in st.session_state:
+    st.session_state.transcript = ""
+if 'translated_text' not in st.session_state:
+    st.session_state.translated_text = ""
+if 'source_language' not in st.session_state:
+    st.session_state.source_language = ""
+if 'target_language' not in st.session_state:
+    st.session_state.target_language = ""
+if 'translation_time' not in st.session_state:
+    st.session_state.translation_time = ""
+if 'transcription_time' not in st.session_state:
+    st.session_state.transcription_time = ""
 
 
 
