@@ -15,6 +15,12 @@ from dotenv import load_dotenv
 load_dotenv()
 client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
 
+def format_timestamp(seconds):
+    """Helper function to format timestamps."""
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = seconds % 60
+    return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
 
 def read_docx(file_path):
     doc = Document(file_path)
@@ -33,25 +39,32 @@ def read_docx(file_path):
 
 def audio_transcript(audio_file):
     audio = AudioSegment.from_file(audio_file)
-    length_audio = len(audio) / 1000
+    length_audio = len(audio) / 1000  # Convert to seconds
     full_transcription = ""
     if length_audio <= 60:
+        start_seconds = 0 * 60
+        end_seconds = min((0 + 1) * 60, length_audio)
+        start = 0 * 60 * 1000  # Convert to milliseconds for slicing
+        end = min((0 + 1) * 60 * 1000, len(audio))
         transcription = client.audio.transcriptions.create(model="whisper-1", file=audio_file, response_format="text")
-        full_transcription = transcription.strip()
+        # full_transcription = transcription.strip()
+        timestamp = f"Start:[{format_timestamp(start_seconds)}] End:[{format_timestamp(end_seconds)}]"
+        full_transcription += f"{timestamp}\n{transcription.strip()}\n\n--EndOfPage--\n\n"
     else:
         for i in range(0, math.ceil(length_audio / 60)):
-            start = i * 60 * 1000  
+            start_seconds = i * 60
+            end_seconds = min((i + 1) * 60, length_audio)
+            start = i * 60 * 1000  # Convert to milliseconds for slicing
             end = min((i + 1) * 60 * 1000, len(audio))
             chunk = audio[start:end]
             with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_file:
                 chunk.export(temp_file.name, format="wav")
                 transcription = client.audio.transcriptions.create(model="whisper-1", file=open(temp_file.name, 'rb'), response_format="text")
-                full_transcription += transcription.strip() + " "
-                full_transcription+= "\n--EndOfPage--\n\n"
+                timestamp = f"Start:[{format_timestamp(start_seconds)}] End:[{format_timestamp(end_seconds)}]"
+                full_transcription += f"{timestamp}\n{transcription.strip()}\n\n--EndOfPage--\n\n"
 
     print(full_transcription)
     return full_transcription
-
 
 def split_pdf_to_chunks(uploaded_file, pages_per_chunk=1):
     file_stream = io.BytesIO(uploaded_file.getvalue())
