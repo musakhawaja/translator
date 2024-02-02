@@ -137,7 +137,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
         text = file.read()
 
     completion = client.chat.completions.create(
-        model="gpt-4-0125-preview",
+        model="gpt-4-32k",
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text}
@@ -302,7 +302,7 @@ if file and not st.session_state.file_processed:
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
                 try:
                     
-                    with st.spinner(f'Transcribing page to page {i*15}...'):
+                    with st.spinner(f'Transcribing page to page {i*10}...'):
                         extracted_text = read_document(temp_file_path)  # read_document now processes a file path
                         extracted_texts.append(extracted_text)
                         # Cleanup: delete the temporary file after processing
