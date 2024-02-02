@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=10):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=14):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
@@ -303,7 +303,7 @@ if file and not st.session_state.file_processed:
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
                 try:
                     
-                    with st.spinner(f'Transcribing page to page {i*10}...'):
+                    with st.spinner(f'Transcribing page to page {i*15}...'):
                         extracted_text = read_document(temp_file_path)  # read_document now processes a file path
                         extracted_texts.append(extracted_text)
                         # Cleanup: delete the temporary file after processing
@@ -313,7 +313,7 @@ if file and not st.session_state.file_processed:
                     continue  # Skip the current file and continue with the next
 
             st.session_state.transcript = "\n\n".join(extracted_texts)
-            extracted_texts=""
+            del extracted_text
             st.session_state.file_processed = True
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
