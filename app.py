@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=5):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=15):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
@@ -147,8 +147,35 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
     result = completion.choices[0].message.content
     print(result)
     return result
-    
-def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
+
+
+def count_tokens(text):
+    """Approximate token count for a given text."""
+    # This is a simplified approximation; adjust the divisor based on more precise tokenization if needed
+    return len(text) / 4
+
+
+def split_text(text, max_tokens=4000):
+    """Split the text into chunks with a maximum token count."""
+    paragraphs = text.split('\n')
+    chunks = []
+    current_chunk = []
+
+    current_tokens = 0
+    for paragraph in paragraphs:
+        paragraph_tokens = count_tokens(paragraph)
+        if current_tokens + paragraph_tokens > max_tokens:
+            chunks.append('\n'.join(current_chunk))
+            current_chunk = [paragraph]
+            current_tokens = paragraph_tokens
+        else:
+            current_chunk.append(paragraph)
+            current_tokens += paragraph_tokens
+    chunks.append('\n'.join(current_chunk))  # Add the last chunk
+
+    return chunks
+
+def translate_and_combine_text(edited_text, prompt, source_lang, target_lang, max_tokens=16000):
     pages = edited_text.split("--EndOfPage--")
     temp_file_paths = []
     translated_texts = []
@@ -159,10 +186,19 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
             temp_file.write(page)
             temp_file_paths.append(temp_file.name)
 
-    # Translate each temp file
+    # Translate each temp file ensuring token limits
     for file_path in temp_file_paths:
-        translated_text = translate(file_path, prompt, source_lang, target_lang)
-        translated_texts.append(translated_text)
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+            if count_tokens(content) > max_tokens:
+                # Split and translate in parts if over the token limit
+                parts = split_text(content, max_tokens // 4)  # Adjust based on your needs
+                for part in parts:
+                    translated_text = translate(part, prompt, source_lang, target_lang)
+                    translated_texts.append(translated_text)
+            else:
+                translated_text = translate(content, prompt, source_lang, target_lang)
+                translated_texts.append(translated_text)
 
     # Combine translated texts
     combined_translated_text = "\n\n".join(translated_texts)
@@ -172,6 +208,31 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
         os.remove(file_path)
 
     return combined_translated_text
+  
+# def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
+#     pages = edited_text.split("--EndOfPage--")
+#     temp_file_paths = []
+#     translated_texts = []
+
+#     # Save each page to a temp file
+#     for page in pages:
+#         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
+#             temp_file.write(page)
+#             temp_file_paths.append(temp_file.name)
+
+#     # Translate each temp file
+#     for file_path in temp_file_paths:
+#         translated_text = translate(file_path, prompt, source_lang, target_lang)
+#         translated_texts.append(translated_text)
+
+#     # Combine translated texts
+#     combined_translated_text = "\n\n".join(translated_texts)
+
+#     # Cleanup: delete temp files
+#     for file_path in temp_file_paths:
+#         os.remove(file_path)
+
+#     return combined_translated_text
 
 def convert_text_to_docx_bytes(text):
     doc = Document()
