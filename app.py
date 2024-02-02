@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=7):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=5):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
@@ -124,7 +124,7 @@ def read_document(temp_file_path):
                 row_text = '\t'.join([text for _, text in row])
                 structured_text += row_text + "\n"
 
-        structured_text += "--EndOfPage--\n\n"
+        structured_text += "\n\n--EndOfPage--\n\n"
         all_structured_text += structured_text  # Append the structured text from the current document
 
     # Delete the temporary file after processing
