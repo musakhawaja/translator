@@ -137,7 +137,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
         text = file.read()
 
     completion = client.chat.completions.create(
-        model="gpt-4-0125-preview",
+        model="gpt-3.5-turbo-0125",
         messages=[
             {"role": "system", "content": prompt},
             {"role": "user", "content": text}
