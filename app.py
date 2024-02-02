@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=3):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=10):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
@@ -282,6 +282,8 @@ if file and (not hasattr(st.session_state, 'last_uploaded_file') or file != st.s
 
 if file and not st.session_state.file_processed:
     if st.button('Transcribe'):
+        st.session_state.transcript = ""
+
         start_time = time.time()
         if option == 'MP3':
             with st.spinner('Transcribing audio...'):
@@ -298,21 +300,20 @@ if file and not st.session_state.file_processed:
             print("Temp file paths:", temp_file_paths)  # This now returns a list of temp file paths
             extracted_texts = []
 
-            count = 1
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
                 try:
                     
-                    with st.spinner(f'Transcribing page {count}-{count + 3} of {len(temp_file_paths)*3}...'):
+                    with st.spinner(f'Transcribing page to page {i*10}...'):
                         extracted_text = read_document(temp_file_path)  # read_document now processes a file path
                         extracted_texts.append(extracted_text)
                         # Cleanup: delete the temporary file after processing
-                    count = count + 4
                 except Exception as e:
                     st.error(f"An error occurred while processing file {i}: {temp_file_path}. Error: {e}")
                     print(f"An error occurred while processing file {i}: {temp_file_path}. Error: {e}")
                     continue  # Skip the current file and continue with the next
 
             st.session_state.transcript = "\n\n".join(extracted_texts)
+            extracted_texts=""
             st.session_state.file_processed = True
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
