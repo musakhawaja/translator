@@ -124,8 +124,7 @@ def read_document(temp_file_path):
                 row_text = '\t'.join([text for _, text in row])
                 structured_text += row_text + "\n"
 
-            structured_text += "--EndOfPage--\n\n"
-        
+        structured_text += "--EndOfPage--\n\n"
         all_structured_text += structured_text  # Append the structured text from the current document
 
     # Delete the temporary file after processing
