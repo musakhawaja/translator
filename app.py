@@ -124,7 +124,7 @@ def read_document(temp_file_path):
                 row_text = '\t'.join([text for _, text in row])
                 structured_text += row_text + "\n"
 
-        structured_text += "\n\n--EndOfPage--\n\n"
+            structured_text += "\n\n--EndOfPage--\n\n"
         all_structured_text += structured_text  # Append the structured text from the current document
 
     # Delete the temporary file after processing
@@ -132,12 +132,15 @@ def read_document(temp_file_path):
 
     return all_structured_text
 
-def translate(text, prompt, source_lang="English", target_lang="Urdu"):
-    # Assuming 'client' is already defined and configured for OpenAI API
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
+    # Read the content of the file at 'file_path'
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
+
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo-0125",
         messages=[
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
             {"role": "user", "content": text}
         ]
     )
@@ -146,34 +149,7 @@ def translate(text, prompt, source_lang="English", target_lang="Urdu"):
     print(result)
     return result
 
-
-def count_tokens(text):
-    """Approximate token count for a given text."""
-    # This is a simplified approximation; adjust the divisor based on more precise tokenization if needed
-    return len(text) / 4
-
-
-def split_text(text, max_tokens=4000):
-    """Split the text into chunks with a maximum token count."""
-    paragraphs = text.split('\n')
-    chunks = []
-    current_chunk = []
-
-    current_tokens = 0
-    for paragraph in paragraphs:
-        paragraph_tokens = count_tokens(paragraph)
-        if current_tokens + paragraph_tokens > max_tokens:
-            chunks.append('\n'.join(current_chunk))
-            current_chunk = [paragraph]
-            current_tokens = paragraph_tokens
-        else:
-            current_chunk.append(paragraph)
-            current_tokens += paragraph_tokens
-    chunks.append('\n'.join(current_chunk))  # Add the last chunk
-
-    return chunks
-
-def translate_and_combine_text(edited_text, prompt, source_lang, target_lang, max_tokens=16000):
+def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
     temp_file_paths = []
     translated_texts = []
@@ -182,21 +158,13 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang, ma
     for page in pages:
         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
             temp_file.write(page)
+            temp_file.flush()  # Make sure data is written to disk
             temp_file_paths.append(temp_file.name)
 
-    # Translate each temp file ensuring token limits
+    # Translate each temp file
     for file_path in temp_file_paths:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-            if count_tokens(content) > max_tokens:
-                # Split and translate in parts if over the token limit
-                parts = split_text(content, max_tokens // 4)  # Adjust based on your needs
-                for part in parts:
-                    translated_text = translate(part, prompt, source_lang, target_lang)
-                    translated_texts.append(translated_text)
-            else:
-                translated_text = translate(content, prompt, source_lang, target_lang)
-                translated_texts.append(translated_text)
+        translated_text = translate(file_path, prompt, source_lang, target_lang)
+        translated_texts.append(translated_text)
 
     # Combine translated texts
     combined_translated_text = "\n\n".join(translated_texts)
@@ -206,31 +174,6 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang, ma
         os.remove(file_path)
 
     return combined_translated_text
-  
-# def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
-#     pages = edited_text.split("--EndOfPage--")
-#     temp_file_paths = []
-#     translated_texts = []
-
-#     # Save each page to a temp file
-#     for page in pages:
-#         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
-#             temp_file.write(page)
-#             temp_file_paths.append(temp_file.name)
-
-#     # Translate each temp file
-#     for file_path in temp_file_paths:
-#         translated_text = translate(file_path, prompt, source_lang, target_lang)
-#         translated_texts.append(translated_text)
-
-#     # Combine translated texts
-#     combined_translated_text = "\n\n".join(translated_texts)
-
-#     # Cleanup: delete temp files
-#     for file_path in temp_file_paths:
-#         os.remove(file_path)
-
-#     return combined_translated_text
 
 def convert_text_to_docx_bytes(text):
     doc = Document()
