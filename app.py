@@ -132,10 +132,8 @@ def read_document(temp_file_path):
 
     return all_structured_text
 
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
-    with open(file_path, 'r', encoding='utf-8') as file:
-        text = file.read()
-
+def translate(text, prompt, source_lang="English", target_lang="Urdu"):
+    # Assuming 'client' is already defined and configured for OpenAI API
     completion = client.chat.completions.create(
         model="gpt-3.5-turbo-0125",
         messages=[
