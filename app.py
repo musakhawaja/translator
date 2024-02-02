@@ -75,7 +75,7 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=14):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=10):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
