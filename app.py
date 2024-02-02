@@ -301,7 +301,7 @@ if file and not st.session_state.file_processed:
             
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
                 try:
-                    with st.spinner(f'Transcribing page {i} of {len(temp_file_paths)}...'):
+                    with st.spinner(f'Transcribing page {i}-{i+3} of {len(temp_file_paths)*3}...'):
                         extracted_text = read_document(temp_file_path)  # read_document now processes a file path
                         extracted_texts.append(extracted_text)
                         # Cleanup: delete the temporary file after processing
