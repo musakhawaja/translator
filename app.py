@@ -5,7 +5,7 @@ from docx import Document
 import time
 import re
 import json 
-
+import concurrent.futures
 
 from google.cloud import documentai_v1 as documentai
 from google.oauth2 import service_account
@@ -161,10 +161,16 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
             temp_file.flush()  # Make sure data is written to disk
             temp_file_paths.append(temp_file.name)
 
-    # Translate each temp file
-    for file_path in temp_file_paths:
-        translated_text = translate(file_path, prompt, source_lang, target_lang)
-        translated_texts.append(translated_text)
+    # Translate each temp file using multiprocessing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): file_path for file_path in temp_file_paths}
+        for future in concurrent.futures.as_completed(future_to_file):
+            file_path = future_to_file[future]
+            try:
+                translated_text = future.result()
+                translated_texts.append(translated_text)
+            except Exception as exc:
+                print(f'{file_path} generated an exception: {exc}')
 
     # Combine translated texts
     combined_translated_text = "\n\n".join(translated_texts)
@@ -174,6 +180,33 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
         os.remove(file_path)
 
     return combined_translated_text
+
+
+# def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
+#     pages = edited_text.split("--EndOfPage--")
+#     temp_file_paths = []
+#     translated_texts = []
+
+#     # Save each page to a temp file
+#     for page in pages:
+#         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
+#             temp_file.write(page)
+#             temp_file.flush()  # Make sure data is written to disk
+#             temp_file_paths.append(temp_file.name)
+
+#     # Translate each temp file
+#     for file_path in temp_file_paths:
+#         translated_text = translate(file_path, prompt, source_lang, target_lang)
+#         translated_texts.append(translated_text)
+
+#     # Combine translated texts
+#     combined_translated_text = "\n\n".join(translated_texts)
+
+#     # Cleanup: delete temp files
+#     for file_path in temp_file_paths:
+#         os.remove(file_path)
+
+#     return combined_translated_text
 
 def convert_text_to_docx_bytes(text):
     doc = Document()
@@ -304,7 +337,7 @@ if file and not st.session_state.file_processed:
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
                 try:
                     
-                    with st.spinner(f'Transcribing page to page {i*10}...'):
+                    with st.spinner(f'Transcribing page to page {i*15}...'):
                         extracted_text = read_document(temp_file_path)  # read_document now processes a file path
                         extracted_texts.append(extracted_text)
                         # Cleanup: delete the temporary file after processing
