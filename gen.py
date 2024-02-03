@@ -115,12 +115,12 @@ def read_document(chunk):
 
     return structured_text
 
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
-    # Read the content of the file at 'file_path'
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu", model_version="gpt-4-turbo"):
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
-    model = "gpt-4"
+    # Model selection based on input parameter
+    model = "gpt-4-0125-preview" if model_version == "gpt-4-turbo" else "gpt-4"
 
     try:
         completion = client.chat.completions.create(
@@ -132,12 +132,15 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
         )
 
         result = completion.choices[0].message.content
-        return ("success", result)  # Indicate success
+        return ("success", result)  # Success
     except Exception as exc:
-        if "rate limit" in str(exc).lower():  # Simplified check, adjust based on actual API response
-            return ("rate_limited", None)  # Indicate rate limit issue without throwing exception
+        if "rate limit" in str(exc).lower():  # Check for rate limit
+            if model_version == "gpt-4-turbo":
+                return ("retry_with_gpt4", None)  # Retry with GPT-4
+            else:
+                return ("requeue", None)  # Requeue for later processing
         else:
-            raise 
+            raise
 
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
@@ -153,23 +156,38 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
 
     # Translate each temp file using multiprocessing, preserving index
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        # Prepare a dict to track tasks
-        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
+        # Initial submission with GPT-4 Turbo
+        future_to_file = {
+            executor.submit(translate, file_path, prompt, source_lang, target_lang, "gpt-4-turbo"): (file_path, index, "gpt-4-turbo")
+            for file_path, index in temp_file_paths
+        }
+        
+        to_requeue = []
+
         while future_to_file:
-            # Process completed futures
             done, _ = concurrent.futures.wait(future_to_file, return_when=concurrent.futures.FIRST_COMPLETED)
             for future in done:
-                file_path, index = future_to_file.pop(future)
+                file_path, index, model_version = future_to_file.pop(future)
                 result, translated_text = future.result()
+                
                 if result == "success":
                     indexed_translated_texts.append((index, translated_text))
-                elif result == "rate_limited":
-                    print(f"Rate limit hit for {file_path}, retrying...")
-                    # Resubmit the task
-                    retry_future = executor.submit(translate, file_path, prompt, source_lang, target_lang)
-                    future_to_file[retry_future] = (file_path, index)
+                elif result == "retry_with_gpt4":
+                    # Retry with GPT-4
+                    retry_future = executor.submit(translate, file_path, prompt, source_lang, target_lang, "gpt-4")
+                    future_to_file[retry_future] = (file_path, index, "gpt-4")
+                elif result == "requeue":
+                    # Mark for requeue
+                    to_requeue.append((file_path, index))
                 else:
                     raise ValueError(f"Unexpected result from translate: {result}")
+
+        # Requeue tasks that hit rate limits on both models
+        for file_path, index in to_requeue:
+            print(f"Requeuing {file_path} due to persistent rate limits...")
+            requeue_future = executor.submit(translate, file_path, prompt, source_lang, target_lang, "gpt-4-turbo")
+            future_to_file[requeue_future] = (file_path, index, "gpt-4-turbo")
+
 
     # Sort translated texts by their index and then combine
     indexed_translated_texts.sort(key=lambda x: x[0])  # Sort by index
