@@ -115,22 +115,35 @@ def read_document(chunk):
 
     return structured_text
 
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu", retry=False):
     # Read the content of the file at 'file_path'
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
-    completion = client.chat.completions.create(
-        model="gpt-4-0125-preview",
-        messages=[
-            {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
-            {"role": "user", "content": text}
-        ]
-    )
+    # Select the model based on whether this is a retry or not
+    model = "gpt-4-0125-preview" if not retry else "gpt-3.5-turbo-0125"
 
-    result = completion.choices[0].message.content
-    print(result)
-    return result
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
+                {"role": "user", "content": text}
+            ]
+        )
+
+        result = completion.choices[0].message.content
+        print(result)
+        return result
+    except Exception as exc:  # Adjust this to catch the specific rate limit exception
+        print(f'Exception for model {model}: {exc}')
+        # If not a retry and the exception indicates a rate limit, try again with GPT-3.5
+        if not retry:
+            print("Retrying with GPT-3.5 due to rate limit.")
+            return translate(file_path, prompt, source_lang, target_lang, retry=True)
+        else:
+            # If already retrying, raise the exception to avoid infinite loops
+            raise
 
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
@@ -145,7 +158,7 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
             temp_file_paths.append((temp_file.name, index))  # Store path with index
 
     # Translate each temp file using multiprocessing, preserving index
-    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
         for future in concurrent.futures.as_completed(future_to_file):
             file_path, index = future_to_file[future]  # Retrieve path and index
