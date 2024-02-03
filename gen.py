@@ -115,13 +115,12 @@ def read_document(chunk):
 
     return structured_text
 
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu", retry=False):
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
     # Read the content of the file at 'file_path'
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
-    # Select the model based on whether this is a retry or not
-    model = "gpt-4-0125-preview" if not retry else "gpt-4"
+    model = "gpt-4"
 
     try:
         completion = client.chat.completions.create(
@@ -133,17 +132,12 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu", retr
         )
 
         result = completion.choices[0].message.content
-        print(result)
-        return result
-    except Exception as exc:  # Adjust this to catch the specific rate limit exception
-        print(f'Exception for model {model}: {exc}')
-        # If not a retry and the exception indicates a rate limit, try again with GPT-3.5
-        if not retry:
-            print("Retrying with GPT-4 due to rate limit.")
-            return translate(file_path, prompt, source_lang, target_lang, retry=True)
+        return ("success", result)  # Indicate success
+    except Exception as exc:
+        if "rate limit" in str(exc).lower():  # Simplified check, adjust based on actual API response
+            return ("rate_limited", None)  # Indicate rate limit issue without throwing exception
         else:
-            # If already retrying, raise the exception to avoid infinite loops
-            raise
+            raise 
 
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
@@ -159,14 +153,23 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
 
     # Translate each temp file using multiprocessing, preserving index
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        # Prepare a dict to track tasks
         future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
-        for future in concurrent.futures.as_completed(future_to_file):
-            file_path, index = future_to_file[future]  # Retrieve path and index
-            try:
-                translated_text = future.result()
-                indexed_translated_texts.append((index, translated_text))  # Store with index
-            except Exception as exc:
-                print(f'{file_path} generated an exception: {exc}')
+        while future_to_file:
+            # Process completed futures
+            done, _ = concurrent.futures.wait(future_to_file, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                file_path, index = future_to_file.pop(future)
+                result, translated_text = future.result()
+                if result == "success":
+                    indexed_translated_texts.append((index, translated_text))
+                elif result == "rate_limited":
+                    print(f"Rate limit hit for {file_path}, retrying...")
+                    # Resubmit the task
+                    retry_future = executor.submit(translate, file_path, prompt, source_lang, target_lang)
+                    future_to_file[retry_future] = (file_path, index)
+                else:
+                    raise ValueError(f"Unexpected result from translate: {result}")
 
     # Sort translated texts by their index and then combine
     indexed_translated_texts.sort(key=lambda x: x[0])  # Sort by index
