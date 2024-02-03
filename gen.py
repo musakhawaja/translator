@@ -132,6 +132,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu", mode
         )
 
         result = completion.choices[0].message.content
+        print(result)
         return ("success", result)  # Success
     except Exception as exc:
         if "rate limit" in str(exc).lower():  # Check for rate limit
