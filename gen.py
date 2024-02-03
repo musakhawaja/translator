@@ -121,7 +121,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu", retr
         text = file.read()
 
     # Select the model based on whether this is a retry or not
-    model = "gpt-4-0125-preview" if not retry else "gpt-3.5-turbo-0125"
+    model = "gpt-4-0125-preview" if not retry else "gpt-4"
 
     try:
         completion = client.chat.completions.create(
@@ -139,7 +139,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu", retr
         print(f'Exception for model {model}: {exc}')
         # If not a retry and the exception indicates a rate limit, try again with GPT-3.5
         if not retry:
-            print("Retrying with GPT-3.5 due to rate limit.")
+            print("Retrying with GPT-4 due to rate limit.")
             return translate(file_path, prompt, source_lang, target_lang, retry=True)
         else:
             # If already retrying, raise the exception to avoid infinite loops
