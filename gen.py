@@ -66,80 +66,159 @@ def audio_transcript(audio_file):
     print(full_transcription)
     return full_transcription
 
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=1):
+def split_pdf_to_chunks(uploaded_file, pages_per_chunk=15):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
+    temp_files = []  #
 
     for start_page in range(0, total_pages, pages_per_chunk):
         writer = PdfFileWriter()
         end_page = min(start_page + pages_per_chunk, total_pages)
+
         for page_number in range(start_page, end_page):
             writer.addPage(reader.getPage(page_number))
-        chunk_file = io.BytesIO()
-        writer.write(chunk_file)
-        chunk_file.seek(0)  
-        yield chunk_file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        writer.write(temp_file)
+        temp_file.close()  
+        temp_files.append(temp_file.name) 
 
-def read_document(chunk):
+    return temp_files
+
+def read_document(temp_file_path):
     credentials = service_account.Credentials.from_service_account_file("ocrproject-412113-82a31889338f.json")
     client = documentai.DocumentProcessorServiceClient(credentials=credentials)
     name = "projects/707177808576/locations/us/processors/6eebcb4a15b88393"
-
-    content = chunk.read()
-    raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
-    request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-    result = client.process_document(request=request)
-    document = result.document
-
-    structured_text = ""
-    for page in document.pages:
-        rows = {}
-        for block in page.blocks:
-            y_coord = block.layout.bounding_poly.vertices[0].y
-            if y_coord not in rows:
-                rows[y_coord] = []
-            block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
-                                       block.layout.text_anchor.text_segments[0].end_index]
-            rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
-
-        for y_coord in sorted(rows.keys()):
-            row = sorted(rows[y_coord], key=lambda x: x[0])  
-            row_text = '\t'.join([text for _, text in row])  
-            structured_text += row_text + "\n"
-
-        structured_text += "--EndOfPage--\n\n"
-
-    return structured_text
-
-
-def translate(text, prompt, source_lang = "English", target_lang="Urdu"):
-  completion = client.chat.completions.create(
-  model="gpt-4",
-  messages=[{"role": "system", "content": prompt},
-            {"role": "user", "content": text}]
-)
-
-  result = completion.choices[0].message.content
-  print(result)
-  return result
     
+    all_structured_text = ""  # Initialize a variable to store all structured text from all documents
+
+    with open(temp_file_path, "rb") as chunk:
+        content = chunk.read()
+        raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
+        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+        result = client.process_document(request=request)
+        document = result.document
+
+        structured_text = ""
+        for page in document.pages:
+            rows = {}
+            for block in page.blocks:
+                y_coord = block.layout.bounding_poly.vertices[0].y
+                if y_coord not in rows:
+                    rows[y_coord] = []
+                block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
+                                            block.layout.text_anchor.text_segments[0].end_index]
+                rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
+
+            for y_coord in sorted(rows.keys()):
+                row = sorted(rows[y_coord], key=lambda x: x[0])
+                row_text = '\t'.join([text for _, text in row])
+                structured_text += row_text + "\n"
+
+            structured_text += "\n\n--EndOfPage--\n\n"
+        all_structured_text += structured_text  # Append the structured text from the current document
+
+    # Delete the temporary file after processing
+    os.remove(temp_file_path)
+
+    return all_structured_text
+
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
+    # Read the content of the file at 'file_path'
+    with open(file_path, 'r', encoding='utf-8') as file:
+        text = file.read()
+
+    completion = client.chat.completions.create(
+        model="gpt-4-0125-preview",
+        messages=[
+            {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
+            {"role": "user", "content": text}
+        ]
+    )
+
+    result = completion.choices[0].message.content
+    print(result)
+    return result
+
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
-    translated_pages = [translate(page, prompt, source_lang, target_lang) for page in pages]
-    combined_translated_text = "\n\n".join(translated_pages)
+    temp_file_paths = []
+    indexed_translated_texts = []  # Store translations with their original index
+
+    # Save each page to a temp file with index
+    for index, page in enumerate(pages):
+        with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
+            temp_file.write(page)
+            temp_file.flush()  # Make sure data is written to disk
+            temp_file_paths.append((temp_file.name, index))  # Store path with index
+
+    # Translate each temp file using multiprocessing, preserving index
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
+        for future in concurrent.futures.as_completed(future_to_file):
+            file_path, index = future_to_file[future]  # Retrieve path and index
+            try:
+                translated_text = future.result()
+                indexed_translated_texts.append((index, translated_text))  # Store with index
+            except Exception as exc:
+                print(f'{file_path} generated an exception: {exc}')
+
+    # Sort translated texts by their index and then combine
+    indexed_translated_texts.sort(key=lambda x: x[0])  # Sort by index
+    combined_translated_text = "\n\n".join([text for _, text in indexed_translated_texts])
+
+    # Cleanup: delete temp files
+    for file_path, _ in temp_file_paths:
+        os.remove(file_path)
 
     return combined_translated_text
+
+
+# def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
+#     pages = edited_text.split("--EndOfPage--")
+#     temp_file_paths = []
+#     translated_texts = []
+
+#     # Save each page to a temp file
+#     for page in pages:
+#         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
+#             temp_file.write(page)
+#             temp_file.flush()  # Make sure data is written to disk
+#             temp_file_paths.append(temp_file.name)
+
+#     # Translate each temp file
+#     for file_path in temp_file_paths:
+#         translated_text = translate(file_path, prompt, source_lang, target_lang)
+#         translated_texts.append(translated_text)
+
+#     # Combine translated texts
+#     combined_translated_text = "\n\n".join(translated_texts)
+
+#     # Cleanup: delete temp files
+#     for file_path in temp_file_paths:
+#         os.remove(file_path)
+
+#     return combined_translated_text
+
+def clean_text(text):
+    """
+    Removes characters that are not compatible with XML (e.g., NULL bytes, control characters)
+    except for tab (\t), newline (\n), and carriage return (\r).
+    """
+    # Allow only printable characters and specific control characters (\t, \n, \r)
+    return ''.join(char for char in text if char.isprintable() or char in '\t\n\r')
 
 def convert_text_to_docx_bytes(text):
     doc = Document()
     lines = text.split('\n')
     for line in lines:
+        # Clean line to remove invalid XML characters
+        cleaned_line = clean_text(line)
         paragraph = doc.add_paragraph()
-        parts = re.split(r'(\*\*.*?\*\*)', line)
+        parts = re.split(r'(\*\*.*?\*\*)', cleaned_line)
         for part in parts:
             if part.startswith('**') and part.endswith('**'):
-                run = paragraph.add_run(part[2:-2]) 
+                run = paragraph.add_run(part[2:-2])
                 run.bold = True
             else:
                 paragraph.add_run(part)
@@ -148,4 +227,3 @@ def convert_text_to_docx_bytes(text):
     doc.save(docx_io)
     docx_io.seek(0)
     return docx_io
-

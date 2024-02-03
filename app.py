@@ -1,5 +1,5 @@
 import streamlit as st
-# from gen import read_docx, audio_transcript, split_pdf_to_chunks, read_document, translate_and_combine_text, convert_text_to_docx_bytes
+from gen import read_docx, audio_transcript, split_pdf_to_chunks, read_document, translate_and_combine_text, convert_text_to_docx_bytes
 import io
 from docx import Document
 import time
@@ -7,257 +7,20 @@ import re
 import json 
 import concurrent.futures
 
-from google.cloud import documentai_v1 as documentai
-from google.oauth2 import service_account
-import io
-from PyPDF2 import PdfFileReader, PdfFileWriter
-from openai import OpenAI
-import json
-from docx import Document
-import base64
-import re
-import math
-import tempfile
-from pydub import AudioSegment
-import os
-from dotenv import load_dotenv
-load_dotenv()
-client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
-
-def format_timestamp(seconds):
-    """Helper function to format timestamps."""
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds = seconds % 60
-    return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"
-
-def read_docx(file_path):
-    doc = Document(file_path)
-    full_text = ""
-    char_count = 0
-
-    for para in doc.paragraphs:
-        para_text = para.text + "\n"
-        full_text += para_text
-        char_count += len(para_text)
-
-        if char_count >= 3000:
-            full_text += "\n--EndOfPage--\n\n"
-            char_count = 0  
-    return full_text.strip()
-
-def audio_transcript(audio_file):
-    audio = AudioSegment.from_file(audio_file)
-    length_audio = len(audio) / 1000  # Convert to seconds
-    full_transcription = ""
-    if length_audio <= 60:
-        start_seconds = 0 * 60
-        end_seconds = min((0 + 1) * 60, length_audio)
-        start = 0 * 60 * 1000  # Convert to milliseconds for slicing
-        end = min((0 + 1) * 60 * 1000, len(audio))
-        transcription = client.audio.transcriptions.create(model="whisper-1", file=audio_file, response_format="text")
-        # full_transcription = transcription.strip()
-        timestamp = f"Start:[{format_timestamp(start_seconds)}] End:[{format_timestamp(end_seconds)}]"
-        full_transcription += f"{timestamp}\n{transcription.strip()}\n\n--EndOfPage--\n\n"
-    else:
-        for i in range(0, math.ceil(length_audio / 60)):
-            start_seconds = i * 60
-            end_seconds = min((i + 1) * 60, length_audio)
-            start = i * 60 * 1000  # Convert to milliseconds for slicing
-            end = min((i + 1) * 60 * 1000, len(audio))
-            chunk = audio[start:end]
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=True) as temp_file:
-                chunk.export(temp_file.name, format="wav")
-                transcription = client.audio.transcriptions.create(model="whisper-1", file=open(temp_file.name, 'rb'), response_format="text")
-                timestamp = f"Start:[{format_timestamp(start_seconds)}] End:[{format_timestamp(end_seconds)}]"
-                full_transcription += f"{timestamp}\n{transcription.strip()}\n\n--EndOfPage--\n\n"
-
-    print(full_transcription)
-    return full_transcription
-
-def split_pdf_to_chunks(uploaded_file, pages_per_chunk=15):
-    file_stream = io.BytesIO(uploaded_file.getvalue())
-    reader = PdfFileReader(file_stream)
-    total_pages = reader.getNumPages()
-    temp_files = []  #
-
-    for start_page in range(0, total_pages, pages_per_chunk):
-        writer = PdfFileWriter()
-        end_page = min(start_page + pages_per_chunk, total_pages)
-
-        for page_number in range(start_page, end_page):
-            writer.addPage(reader.getPage(page_number))
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        writer.write(temp_file)
-        temp_file.close()  
-        temp_files.append(temp_file.name) 
-
-    return temp_files
-
-def read_document(temp_file_path):
-    credentials = service_account.Credentials.from_service_account_file("ocrproject-412113-82a31889338f.json")
-    client = documentai.DocumentProcessorServiceClient(credentials=credentials)
-    name = "projects/707177808576/locations/us/processors/6eebcb4a15b88393"
-    
-    all_structured_text = ""  # Initialize a variable to store all structured text from all documents
-
-    with open(temp_file_path, "rb") as chunk:
-        content = chunk.read()
-        raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
-        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-        result = client.process_document(request=request)
-        document = result.document
-
-        structured_text = ""
-        for page in document.pages:
-            rows = {}
-            for block in page.blocks:
-                y_coord = block.layout.bounding_poly.vertices[0].y
-                if y_coord not in rows:
-                    rows[y_coord] = []
-                block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
-                                            block.layout.text_anchor.text_segments[0].end_index]
-                rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
-
-            for y_coord in sorted(rows.keys()):
-                row = sorted(rows[y_coord], key=lambda x: x[0])
-                row_text = '\t'.join([text for _, text in row])
-                structured_text += row_text + "\n"
-
-            structured_text += "\n\n--EndOfPage--\n\n"
-        all_structured_text += structured_text  # Append the structured text from the current document
-
-    # Delete the temporary file after processing
-    os.remove(temp_file_path)
-
-    return all_structured_text
-
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
-    # Read the content of the file at 'file_path'
-    with open(file_path, 'r', encoding='utf-8') as file:
-        text = file.read()
-
-    completion = client.chat.completions.create(
-        model="gpt-4-0125-preview",
-        messages=[
-            {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
-            {"role": "user", "content": text}
-        ]
-    )
-
-    result = completion.choices[0].message.content
-    print(result)
-    return result
-
-def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
-    pages = edited_text.split("--EndOfPage--")
-    temp_file_paths = []
-    indexed_translated_texts = []  # Store translations with their original index
-
-    # Save each page to a temp file with index
-    for index, page in enumerate(pages):
-        with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
-            temp_file.write(page)
-            temp_file.flush()  # Make sure data is written to disk
-            temp_file_paths.append((temp_file.name, index))  # Store path with index
-
-    # Translate each temp file using multiprocessing, preserving index
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
-        for future in concurrent.futures.as_completed(future_to_file):
-            file_path, index = future_to_file[future]  # Retrieve path and index
-            try:
-                translated_text = future.result()
-                indexed_translated_texts.append((index, translated_text))  # Store with index
-            except Exception as exc:
-                print(f'{file_path} generated an exception: {exc}')
-
-    # Sort translated texts by their index and then combine
-    indexed_translated_texts.sort(key=lambda x: x[0])  # Sort by index
-    combined_translated_text = "\n\n".join([text for _, text in indexed_translated_texts])
-
-    # Cleanup: delete temp files
-    for file_path, _ in temp_file_paths:
-        os.remove(file_path)
-
-    return combined_translated_text
-
-
-# def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
-#     pages = edited_text.split("--EndOfPage--")
-#     temp_file_paths = []
-#     translated_texts = []
-
-#     # Save each page to a temp file
-#     for page in pages:
-#         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
-#             temp_file.write(page)
-#             temp_file.flush()  # Make sure data is written to disk
-#             temp_file_paths.append(temp_file.name)
-
-#     # Translate each temp file
-#     for file_path in temp_file_paths:
-#         translated_text = translate(file_path, prompt, source_lang, target_lang)
-#         translated_texts.append(translated_text)
-
-#     # Combine translated texts
-#     combined_translated_text = "\n\n".join(translated_texts)
-
-#     # Cleanup: delete temp files
-#     for file_path in temp_file_paths:
-#         os.remove(file_path)
-
-#     return combined_translated_text
-
-def clean_text(text):
-    """
-    Removes characters that are not compatible with XML (e.g., NULL bytes, control characters)
-    except for tab (\t), newline (\n), and carriage return (\r).
-    """
-    # Allow only printable characters and specific control characters (\t, \n, \r)
-    return ''.join(char for char in text if char.isprintable() or char in '\t\n\r')
-
-def convert_text_to_docx_bytes(text):
-    doc = Document()
-    lines = text.split('\n')
-    for line in lines:
-        # Clean line to remove invalid XML characters
-        cleaned_line = clean_text(line)
-        paragraph = doc.add_paragraph()
-        parts = re.split(r'(\*\*.*?\*\*)', cleaned_line)
-        for part in parts:
-            if part.startswith('**') and part.endswith('**'):
-                run = paragraph.add_run(part[2:-2])
-                run.bold = True
-            else:
-                paragraph.add_run(part)
-
-    docx_io = io.BytesIO()
-    doc.save(docx_io)
-    docx_io.seek(0)
-    return docx_io
-
-
-
-
-
-
-
-
 st.title('Document Processor and Translator')
 
-# def save_last_state(data, filename="last_state.json"):
-#     """Saves the last transcription and translation to a file."""
-#     with open(filename, "w") as file:
-#         json.dump(data, file)
+def save_last_state(data, filename="last_state.json"):
+    """Saves the last transcription and translation to a file."""
+    with open(filename, "w") as file:
+        json.dump(data, file)
 
-# def load_last_state(filename="last_state.json"):
-#     """Loads the last transcription and translation from a file."""
-#     try:
-#         with open(filename, "r") as file:
-#             return json.load(file)
-#     except (FileNotFoundError, json.JSONDecodeError):
-#         return {}
+def load_last_state(filename="last_state.json"):
+    """Loads the last transcription and translation from a file."""
+    try:
+        with open(filename, "r") as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 def save_custom_prompt(display_name, prompt_text):
     prompts = load_custom_prompts()  # Ensure this returns a dictionary
@@ -361,7 +124,7 @@ if file and not st.session_state.file_processed:
             st.session_state.file_processed = True
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
-# save_last_state({'transcript': st.session_state['transcript']})
+save_last_state({'transcript': st.session_state['transcript']})
 if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
     source_language = st.text_input("Enter the source language:")
@@ -411,10 +174,10 @@ if st.session_state.file_processed:
             st.error("No text available to translate.")
         st.session_state['translation_time'] = time.time() - start_time  # End timing
     display_time_taken('translation')
-    # save_last_state({
-    #     'transcript': st.session_state['transcript'],
-    #     'translated_text': st.session_state['translated_text']
-    # })
+    save_last_state({
+        'transcript': st.session_state['transcript'],
+        'translated_text': st.session_state['translated_text']
+    })
     if 'translated_text' in st.session_state:
         st.session_state.translated_text = st.text_area("Edit the translation:", st.session_state.translated_text, height=600)
         if st.button("Generate Download Link"):
@@ -427,17 +190,17 @@ if st.session_state.file_processed:
             )
 
 
-    # if st.button('Load Last State'):
-    #     last_state = load_last_state()
-    #     if last_state:
-    #         if 'transcript' in last_state:
-    #             st.session_state.transcript = last_state.get('transcript', "")
-    #             # Update the text area for transcription directly
-    #             edited_text = st.text_area("Content (Edit as needed)", value=st.session_state.transcript, height=300)
-    #         if 'translated_text' in last_state:
-    #             st.session_state.translated_text = last_state.get('translated_text', "")
-    #             # Update the text area for translation directly
-    #             translated_text_area = st.text_area("Translated Text", value=st.session_state.translated_text, height=300)
-    #         st.success("Last state loaded successfully.")
-    #     else:
-    #         st.error("No saved state found.")
+    if st.button('Load Last State'):
+        last_state = load_last_state()
+        if last_state:
+            if 'transcript' in last_state:
+                st.session_state.transcript = last_state.get('transcript', "")
+                # Update the text area for transcription directly
+                edited_text = st.text_area("Content (Edit as needed)", value=st.session_state.transcript, height=300)
+            if 'translated_text' in last_state:
+                st.session_state.translated_text = last_state.get('translated_text', "")
+                # Update the text area for translation directly
+                translated_text_area = st.text_area("Translated Text", value=st.session_state.translated_text, height=300)
+            st.success("Last state loaded successfully.")
+        else:
+            st.error("No saved state found.")
