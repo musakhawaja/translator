@@ -12,6 +12,9 @@ import tempfile
 from pydub import AudioSegment
 import os
 from dotenv import load_dotenv
+import concurrent.futures
+
+
 load_dotenv()
 client = OpenAI(api_key = os.getenv('OPENAI_API_KEY'))
 
@@ -70,58 +73,47 @@ def split_pdf_to_chunks(uploaded_file, pages_per_chunk=15):
     file_stream = io.BytesIO(uploaded_file.getvalue())
     reader = PdfFileReader(file_stream)
     total_pages = reader.getNumPages()
-    temp_files = []  #
 
     for start_page in range(0, total_pages, pages_per_chunk):
         writer = PdfFileWriter()
         end_page = min(start_page + pages_per_chunk, total_pages)
-
         for page_number in range(start_page, end_page):
             writer.addPage(reader.getPage(page_number))
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        writer.write(temp_file)
-        temp_file.close()  
-        temp_files.append(temp_file.name) 
+        chunk_file = io.BytesIO()
+        writer.write(chunk_file)
+        chunk_file.seek(0)  
+        yield chunk_file
 
-    return temp_files
-
-def read_document(temp_file_path):
+def read_document(chunk):
     credentials = service_account.Credentials.from_service_account_file("ocrproject-412113-82a31889338f.json")
     client = documentai.DocumentProcessorServiceClient(credentials=credentials)
     name = "projects/707177808576/locations/us/processors/6eebcb4a15b88393"
-    
-    all_structured_text = ""  # Initialize a variable to store all structured text from all documents
 
-    with open(temp_file_path, "rb") as chunk:
-        content = chunk.read()
-        raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
-        request = documentai.ProcessRequest(name=name, raw_document=raw_document)
-        result = client.process_document(request=request)
-        document = result.document
+    content = chunk.read()
+    raw_document = documentai.RawDocument(content=content, mime_type="application/pdf")
+    request = documentai.ProcessRequest(name=name, raw_document=raw_document)
+    result = client.process_document(request=request)
+    document = result.document
 
-        structured_text = ""
-        for page in document.pages:
-            rows = {}
-            for block in page.blocks:
-                y_coord = block.layout.bounding_poly.vertices[0].y
-                if y_coord not in rows:
-                    rows[y_coord] = []
-                block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
-                                            block.layout.text_anchor.text_segments[0].end_index]
-                rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
+    structured_text = ""
+    for page in document.pages:
+        rows = {}
+        for block in page.blocks:
+            y_coord = block.layout.bounding_poly.vertices[0].y
+            if y_coord not in rows:
+                rows[y_coord] = []
+            block_text = document.text[block.layout.text_anchor.text_segments[0].start_index:
+                                       block.layout.text_anchor.text_segments[0].end_index]
+            rows[y_coord].append((block.layout.bounding_poly.vertices[0].x, block_text))
 
-            for y_coord in sorted(rows.keys()):
-                row = sorted(rows[y_coord], key=lambda x: x[0])
-                row_text = '\t'.join([text for _, text in row])
-                structured_text += row_text + "\n"
+        for y_coord in sorted(rows.keys()):
+            row = sorted(rows[y_coord], key=lambda x: x[0])  
+            row_text = '\t'.join([text for _, text in row])  
+            structured_text += row_text + "\n"
 
-            structured_text += "\n\n--EndOfPage--\n\n"
-        all_structured_text += structured_text  # Append the structured text from the current document
+        structured_text += "--EndOfPage--\n\n"
 
-    # Delete the temporary file after processing
-    os.remove(temp_file_path)
-
-    return all_structured_text
+    return structured_text
 
 def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
     # Read the content of the file at 'file_path'
@@ -153,7 +145,7 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
             temp_file_paths.append((temp_file.name, index))  # Store path with index
 
     # Translate each temp file using multiprocessing, preserving index
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
         future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
         for future in concurrent.futures.as_completed(future_to_file):
             file_path, index = future_to_file[future]  # Retrieve path and index

@@ -5,7 +5,6 @@ from docx import Document
 import time
 import re
 import json 
-import concurrent.futures
 
 st.title('Document Processor and Translator')
 
@@ -104,7 +103,6 @@ if file and not st.session_state.file_processed:
 
         elif option == 'PDF':
             temp_file_paths = split_pdf_to_chunks(file)
-            print("Temp file paths:", temp_file_paths)  # This now returns a list of temp file paths
             extracted_texts = []
 
             for i, temp_file_path in enumerate(temp_file_paths, start=1):
