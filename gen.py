@@ -120,7 +120,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu", mode
         text = file.read()
 
     # Model selection based on input parameter
-    model = "gpt-4-0125-preview" if model_version == "gpt-4-turbo" else "gpt-4"
+    model = "gpt-4-0125-preview" if model_version == "gpt-4-turbo" else "gpt-4-1106-preview"
 
     try:
         completion = client.chat.completions.create(
@@ -156,7 +156,7 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
             temp_file_paths.append((temp_file.name, index))  # Store path with index
 
     # Translate each temp file using multiprocessing, preserving index
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         # Initial submission with GPT-4 Turbo
         future_to_file = {
             executor.submit(translate, file_path, prompt, source_lang, target_lang, "gpt-4-turbo"): (file_path, index, "gpt-4-turbo")
