@@ -138,7 +138,7 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
         text = file.read()
 
     completion = client.chat.completions.create(
-        model="gpt-3.5-turbo-0125",
+        model="gpt-4-0125-preview",
         messages=[
             {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
             {"role": "user", "content": text}
@@ -152,31 +152,32 @@ def translate(file_path, prompt, source_lang="English", target_lang="Urdu"):
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
     temp_file_paths = []
-    translated_texts = []
+    indexed_translated_texts = []  # Store translations with their original index
 
-    # Save each page to a temp file
-    for page in pages:
+    # Save each page to a temp file with index
+    for index, page in enumerate(pages):
         with tempfile.NamedTemporaryFile(delete=False, mode='w+', encoding='utf-8', suffix=".txt") as temp_file:
             temp_file.write(page)
             temp_file.flush()  # Make sure data is written to disk
-            temp_file_paths.append(temp_file.name)
+            temp_file_paths.append((temp_file.name, index))  # Store path with index
 
-    # Translate each temp file using multiprocessing
+    # Translate each temp file using multiprocessing, preserving index
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): file_path for file_path in temp_file_paths}
+        future_to_file = {executor.submit(translate, file_path, prompt, source_lang, target_lang): (file_path, index) for file_path, index in temp_file_paths}
         for future in concurrent.futures.as_completed(future_to_file):
-            file_path = future_to_file[future]
+            file_path, index = future_to_file[future]  # Retrieve path and index
             try:
                 translated_text = future.result()
-                translated_texts.append(translated_text)
+                indexed_translated_texts.append((index, translated_text))  # Store with index
             except Exception as exc:
                 print(f'{file_path} generated an exception: {exc}')
 
-    # Combine translated texts
-    combined_translated_text = "\n\n".join(translated_texts)
+    # Sort translated texts by their index and then combine
+    indexed_translated_texts.sort(key=lambda x: x[0])  # Sort by index
+    combined_translated_text = "\n\n".join([text for _, text in indexed_translated_texts])
 
     # Cleanup: delete temp files
-    for file_path in temp_file_paths:
+    for file_path, _ in temp_file_paths:
         os.remove(file_path)
 
     return combined_translated_text
@@ -208,15 +209,25 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
 
 #     return combined_translated_text
 
+def clean_text(text):
+    """
+    Removes characters that are not compatible with XML (e.g., NULL bytes, control characters)
+    except for tab (\t), newline (\n), and carriage return (\r).
+    """
+    # Allow only printable characters and specific control characters (\t, \n, \r)
+    return ''.join(char for char in text if char.isprintable() or char in '\t\n\r')
+
 def convert_text_to_docx_bytes(text):
     doc = Document()
     lines = text.split('\n')
     for line in lines:
+        # Clean line to remove invalid XML characters
+        cleaned_line = clean_text(line)
         paragraph = doc.add_paragraph()
-        parts = re.split(r'(\*\*.*?\*\*)', line)
+        parts = re.split(r'(\*\*.*?\*\*)', cleaned_line)
         for part in parts:
             if part.startswith('**') and part.endswith('**'):
-                run = paragraph.add_run(part[2:-2]) 
+                run = paragraph.add_run(part[2:-2])
                 run.bold = True
             else:
                 paragraph.add_run(part)
@@ -233,21 +244,20 @@ def convert_text_to_docx_bytes(text):
 
 
 
-
 st.title('Document Processor and Translator')
 
-def save_last_state(data, filename="last_state.json"):
-    """Saves the last transcription and translation to a file."""
-    with open(filename, "w") as file:
-        json.dump(data, file)
+# def save_last_state(data, filename="last_state.json"):
+#     """Saves the last transcription and translation to a file."""
+#     with open(filename, "w") as file:
+#         json.dump(data, file)
 
-def load_last_state(filename="last_state.json"):
-    """Loads the last transcription and translation from a file."""
-    try:
-        with open(filename, "r") as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+# def load_last_state(filename="last_state.json"):
+#     """Loads the last transcription and translation from a file."""
+#     try:
+#         with open(filename, "r") as file:
+#             return json.load(file)
+#     except (FileNotFoundError, json.JSONDecodeError):
+#         return {}
 
 def save_custom_prompt(display_name, prompt_text):
     prompts = load_custom_prompts()  # Ensure this returns a dictionary
@@ -351,7 +361,7 @@ if file and not st.session_state.file_processed:
             st.session_state.file_processed = True
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
-save_last_state({'transcript': st.session_state['transcript']})
+# save_last_state({'transcript': st.session_state['transcript']})
 if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
     source_language = st.text_input("Enter the source language:")
@@ -401,10 +411,10 @@ if st.session_state.file_processed:
             st.error("No text available to translate.")
         st.session_state['translation_time'] = time.time() - start_time  # End timing
     display_time_taken('translation')
-    save_last_state({
-        'transcript': st.session_state['transcript'],
-        'translated_text': st.session_state['translated_text']
-    })
+    # save_last_state({
+    #     'transcript': st.session_state['transcript'],
+    #     'translated_text': st.session_state['translated_text']
+    # })
     if 'translated_text' in st.session_state:
         st.session_state.translated_text = st.text_area("Edit the translation:", st.session_state.translated_text, height=600)
         if st.button("Generate Download Link"):
@@ -417,17 +427,17 @@ if st.session_state.file_processed:
             )
 
 
-    if st.button('Load Last State'):
-        last_state = load_last_state()
-        if last_state:
-            if 'transcript' in last_state:
-                st.session_state.transcript = last_state.get('transcript', "")
-                # Update the text area for transcription directly
-                edited_text = st.text_area("Content (Edit as needed)", value=st.session_state.transcript, height=300)
-            if 'translated_text' in last_state:
-                st.session_state.translated_text = last_state.get('translated_text', "")
-                # Update the text area for translation directly
-                translated_text_area = st.text_area("Translated Text", value=st.session_state.translated_text, height=300)
-            st.success("Last state loaded successfully.")
-        else:
-            st.error("No saved state found.")
+    # if st.button('Load Last State'):
+    #     last_state = load_last_state()
+    #     if last_state:
+    #         if 'transcript' in last_state:
+    #             st.session_state.transcript = last_state.get('transcript', "")
+    #             # Update the text area for transcription directly
+    #             edited_text = st.text_area("Content (Edit as needed)", value=st.session_state.transcript, height=300)
+    #         if 'translated_text' in last_state:
+    #             st.session_state.translated_text = last_state.get('translated_text', "")
+    #             # Update the text area for translation directly
+    #             translated_text_area = st.text_area("Translated Text", value=st.session_state.translated_text, height=300)
+    #         st.success("Last state loaded successfully.")
+    #     else:
+    #         st.error("No saved state found.")
