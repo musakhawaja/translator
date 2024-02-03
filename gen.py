@@ -171,13 +171,14 @@ def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
                 result, translated_text = future.result()
                 
                 if result == "success":
+                    print(f"Page {index} translated successfully")
                     indexed_translated_texts.append((index, translated_text))
                 elif result == "retry_with_gpt4":
-                    # Retry with GPT-4
+                    print(f"Page {index} failed. Retrying with GPT4 Base")
                     retry_future = executor.submit(translate, file_path, prompt, source_lang, target_lang, "gpt-4")
                     future_to_file[retry_future] = (file_path, index, "gpt-4")
                 elif result == "requeue":
-                    # Mark for requeue
+                    print(f"Page {index} failed. REQUE")
                     to_requeue.append((file_path, index))
                 else:
                     raise ValueError(f"Unexpected result from translate: {result}")
