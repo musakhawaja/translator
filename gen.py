@@ -115,33 +115,50 @@ def read_document(chunk):
 
     return structured_text
 
-def translate(file_path, prompt, source_lang="English", target_lang="Urdu", model_version="gpt-4-turbo"):
+def translate(file_path, prompt, source_lang="English", target_lang="Urdu",placeholder="model"):
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
-    # Model selection based on input parameter
-    model = "gpt-4-0125-preview" if model_version == "gpt-4-turbo" else "gpt-4-1106-preview"
+    # Define model versions in the order they should be tried
+    model_versions = [
+        "gpt-4-turbo-2",  # Assuming "gpt-4-turbo-2" is a placeholder for the actual model identifier
+        "gpt-4-turbo",
+        "gpt-4-base",  # Assuming "gpt-4-base" is a placeholder for the actual model identifier
+        "gpt-3.5"
+    ]
 
-    try:
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
-                {"role": "user", "content": text}
-            ]
-        )
-
-        result = completion.choices[0].message.content
-        print(result)
-        return ("success", result)  # Success
-    except Exception as exc:
-        if "rate limit" in str(exc).lower():  # Check for rate limit
-            if model_version == "gpt-4-turbo":
-                return ("retry_with_gpt4", None)  # Retry with GPT-4
+    for model_version in model_versions:
+        try:
+            # Determine the appropriate model based on the current iteration
+            if model_version == "gpt-4-turbo-2":
+                model = "gpt-4-0125-preview"  # Placeholder
+            elif model_version == "gpt-4-turbo":
+                model = "gpt-4-1106-preview"  # Adjusted for the example provided; replace as needed
+            elif model_version == "gpt-4-base":
+                model = "gpt-4"  # Placeholder for GPT-4 Base model identifier
             else:
-                return ("requeue", None)  # Requeue for later processing
-        else:
-            raise
+                model = "gpt-3.5-turbo-0125"  # Placeholder for GPT-3.5 model identifier; replace as needed
+
+            # Attempt to use the selected model for translation
+            completion = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": f"Translate from {source_lang} to {target_lang}: {prompt}"},
+                    {"role": "user", "content": text}
+                ]
+            )
+
+            result = completion.choices[0].message.content
+            print(result)
+            return ("success", result)  # Success
+        except Exception as exc:
+            if "rate limit" in str(exc).lower():
+                continue  # Try the next model in the list
+            else:
+                raise  # Raise the exception if it's not a rate limit issue
+
+    # If all models hit their rate limit, requeue the request
+    return ("requeue", None)
 
 def translate_and_combine_text(edited_text, prompt, source_lang, target_lang):
     pages = edited_text.split("--EndOfPage--")
