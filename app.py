@@ -8,41 +8,52 @@ import json
 import os
 st.title('Document Processor and Translator')
 
-def read_untranslated_words(file_path):
+# Function to read word pairs from a file
+def read_word_pairs(file_path):
     if os.path.exists(file_path):
         with open(file_path, 'r', encoding='utf-8') as file:
-            words = file.read().splitlines()
+            word_pairs = json.load(file)
     else:
-        words = []
-    return words
+        word_pairs = []
+    return word_pairs
 
-def add_word_to_file(file_path, word):
-    with open(file_path, 'a', encoding='utf-8') as file:
-        file.write(f"{word}\n")
+# Function to add a pair of words to the file
+def add_word_pair_to_file(file_path, original, translated):
+    word_pairs = read_word_pairs(file_path)
+    word_pairs.append({"original": original, "translated": translated})
+    with open(file_path, 'w', encoding='utf-8') as file:
+        json.dump(word_pairs, file)
 
-def untranslated_words_interface(file_path='untranslated_words.txt'):
-    if 'untranslated_words' not in st.session_state:
-        st.session_state.untranslated_words = read_untranslated_words(file_path)
+# Interface for managing word pairs
+def word_pairs_interface(file_path='word_pairs.json'):
+    if 'word_pairs' not in st.session_state:
+        st.session_state.word_pairs = read_word_pairs(file_path)
     
-    with st.expander("Manage Untranslated Words"):
-        new_word = st.text_input("Enter a word to keep untranslated:", key="new_word")
-        if st.button("Add Word"):
-            add_word_to_file(file_path, new_word)
-            st.session_state.untranslated_words.append(new_word)  # Update session state
-            st.success(f"Added '{new_word}' to untranslated words list.")
-            # To refresh the list in the UI, reassign the list to itself
-            st.session_state.untranslated_words = st.session_state.untranslated_words[:]
+    with st.expander("Manage Translation Word Pairs"):
+        col1, col2 = st.columns(2)
+        with col1:
+            original_word = st.text_input("Original word:", key="original_word")
+        with col2:
+            translated_word = st.text_input("Translated version:", key="translated_word")
+        
+        if st.button("Add Word Pair"):
+            add_word_pair_to_file(file_path, original_word, translated_word)
+            st.session_state.word_pairs = read_word_pairs(file_path)  # Refresh the list
+            st.success(f"Added word pair '{original_word}' -> '{translated_word}'")
 
-        st.write("Current list of untranslated words:")
-        st.write(st.session_state.untranslated_words)
+        st.write("Current list of word pairs:")
+        for pair in st.session_state.word_pairs:
+            st.write(f"{pair['original']} -> {pair['translated']}")
 
-def enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words):
-    if untranslated_words:
-        no_translate_instruction = "Keep the following words untranslated: " + ", ".join(untranslated_words) + "."
-        enhanced_prompt = f"{no_translate_instruction} {prompt}"
+# Enhance the translation prompt with word pairs
+def enhance_translation_prompt_with_word_pairs(prompt, word_pairs):
+    if word_pairs:
+        translations_instruction = "Translate the following words as specified: " + ", ".join([f"{pair['original']} as {pair['translated']}" for pair in word_pairs]) + "."
+        enhanced_prompt = f"{prompt} {translations_instruction}"
     else:
         enhanced_prompt = prompt
     return enhanced_prompt
+
 
 def save_last_state(data, filename="last_state.json"):
     """Saves the last transcription and translation to a file."""
@@ -80,6 +91,13 @@ def display_time_taken(process_name):
             time_str = f"{time_taken:.2f} seconds"
         st.info(f"{process_name.replace('_', ' ').capitalize()} completed in {time_str}.")
 
+def transcription_download(text):
+    doc = Document()
+    doc.add_paragraph(text)
+    doc_bytes = io.BytesIO()
+    doc.save(doc_bytes)
+    doc_bytes.seek(0)  # Go back to the beginning of the BytesIO object
+    return doc_bytes
 
 saved_custom_prompts = load_custom_prompts()
 
@@ -161,6 +179,13 @@ display_time_taken('transcription')
 save_last_state({'transcript': st.session_state['transcript']})
 if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
+    docx_bytes = transcription_download(st.session_state.transcript)
+    st.download_button(
+        label="Download Transcription",
+        data=docx_bytes,
+        file_name="transcription.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
     source_language = st.text_input("Enter the source language:")
     target_language = st.text_input("Enter the target language:") 
     prompt_option = st.radio("Choose your prompt type", ["Use default prompt", "Enter custom prompt", "Use saved prompt"])
@@ -170,7 +195,7 @@ if st.session_state.file_processed:
         processed_transcript = re.sub(timestamp_pattern, '', edited_text)
         edited_text = processed_transcript
 
-    untranslated_words_interface()
+    word_pairs_interface()
     if prompt_option == "Enter custom prompt":
         display_name = st.text_input("Enter a name for your custom prompt:")
         custom_prompt = st.text_area("Enter your custom prompt:")
@@ -186,7 +211,7 @@ if st.session_state.file_processed:
 
     if st.button('Translate'):
         start_time = time.time()
-        untranslated_words = read_untranslated_words('untranslated_words.txt')
+        word_pairs = read_word_pairs('word_pairs.json')
         if edited_text:
             with st.spinner(f'Translating to {target_language}...'):
                 if prompt_option == "Use default prompt":
@@ -201,11 +226,11 @@ if st.session_state.file_processed:
                     7) Don't return any text in the original language. Only return text in {target_language}
                     8) Identify the headings in the text and bold them
                     9) If you aren't given any text, just return a blank response. Don't return anything other than translated text or blank response"""
-                    prompt = enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words)
+                    prompt = enhance_translation_prompt_with_word_pairs(prompt, word_pairs)
                 else:
                     # Use custom prompt (entered or selected from saved prompts)
                     prompt = custom_prompt
-                    prompt = enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words)
+                    prompt = enhance_translation_prompt_with_word_pairs(prompt, word_pairs)
                 st.session_state.translated_text = translate_and_combine_text(edited_text, prompt, source_language, target_language)
         else:
             st.error("No text available to translate.")
