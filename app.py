@@ -5,8 +5,44 @@ from docx import Document
 import time
 import re
 import json 
-
+import os
 st.title('Document Processor and Translator')
+
+def read_untranslated_words(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, 'r', encoding='utf-8') as file:
+            words = file.read().splitlines()
+    else:
+        words = []
+    return words
+
+def add_word_to_file(file_path, word):
+    with open(file_path, 'a', encoding='utf-8') as file:
+        file.write(f"{word}\n")
+
+def untranslated_words_interface(file_path='untranslated_words.txt'):
+    if 'untranslated_words' not in st.session_state:
+        st.session_state.untranslated_words = read_untranslated_words(file_path)
+    
+    with st.expander("Manage Untranslated Words"):
+        new_word = st.text_input("Enter a word to keep untranslated:", key="new_word")
+        if st.button("Add Word"):
+            add_word_to_file(file_path, new_word)
+            st.session_state.untranslated_words.append(new_word)  # Update session state
+            st.success(f"Added '{new_word}' to untranslated words list.")
+            # To refresh the list in the UI, reassign the list to itself
+            st.session_state.untranslated_words = st.session_state.untranslated_words[:]
+
+        st.write("Current list of untranslated words:")
+        st.write(st.session_state.untranslated_words)
+
+def enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words):
+    if untranslated_words:
+        no_translate_instruction = "Keep the following words untranslated: " + ", ".join(untranslated_words) + "."
+        enhanced_prompt = f"{no_translate_instruction} {prompt}"
+    else:
+        enhanced_prompt = prompt
+    return enhanced_prompt
 
 def save_last_state(data, filename="last_state.json"):
     """Saves the last transcription and translation to a file."""
@@ -123,6 +159,7 @@ if file and not st.session_state.file_processed:
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
 save_last_state({'transcript': st.session_state['transcript']})
+untranslated_words_interface()
 if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
     source_language = st.text_input("Enter the source language:")
@@ -150,6 +187,7 @@ if st.session_state.file_processed:
 
     if st.button('Translate'):
         start_time = time.time()
+        untranslated_words = read_untranslated_words('untranslated_words.txt')
         if edited_text:
             with st.spinner(f'Translating to {target_language}...'):
                 if prompt_option == "Use default prompt":
@@ -164,9 +202,11 @@ if st.session_state.file_processed:
                     7) Don't return any text in the original language. Only return text in {target_language}
                     8) Identify the headings in the text and bold them
                     9) If you aren't given any text, just return a blank response. Don't return anything other than translated text or blank response"""
+                    prompt = enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words)
                 else:
                     # Use custom prompt (entered or selected from saved prompts)
                     prompt = custom_prompt
+                    prompt = enhance_translation_prompt_with_untranslated_words(prompt, untranslated_words)
                 st.session_state.translated_text = translate_and_combine_text(edited_text, prompt, source_language, target_language)
         else:
             st.error("No text available to translate.")
