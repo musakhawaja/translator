@@ -159,7 +159,6 @@ if file and not st.session_state.file_processed:
         st.session_state['transcription_time'] = time.time() - start_time  # End timing
 display_time_taken('transcription')
 save_last_state({'transcript': st.session_state['transcript']})
-untranslated_words_interface()
 if st.session_state.file_processed:          
     edited_text = st.text_area("Content (Edit as needed)", st.session_state.transcript, height=600)
     source_language = st.text_input("Enter the source language:")
@@ -171,7 +170,7 @@ if st.session_state.file_processed:
         processed_transcript = re.sub(timestamp_pattern, '', edited_text)
         edited_text = processed_transcript
 
-    
+    untranslated_words_interface()
     if prompt_option == "Enter custom prompt":
         display_name = st.text_input("Enter a name for your custom prompt:")
         custom_prompt = st.text_area("Enter your custom prompt:")
